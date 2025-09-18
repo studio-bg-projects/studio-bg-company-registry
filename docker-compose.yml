@@ -17,3 +17,13 @@ services:
       MYSQL_USER: ${DB_USERNAME-$PREFIX}
       MYSQL_PASSWORD: ${DB_PASSWORD-pass}
     command: mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  node:
+    container_name: $PREFIX-node$SUFFIX
+    image: $PREFIX/build:latest
+    build: ./docker-images/node
+    restart: no
+    volumes:
+      - ./:/app
+    environment:
+      TZ: ${TZ:-UTC}
