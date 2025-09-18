@@ -4,14 +4,15 @@
   "description": "BlackFox Chat Server",
   "main": "index.js",
   "scripts": {
-    "test-dev": "nodemon src/load.ts"
+    "get-guru-all-companies": "nodemon src/get-guru-all-companies.ts"
   },
   "author": "Studio.bg",
   "license": "ISC",
   "dependencies": {
     "dotenv": "^17.2.0",
     "moment": "^2.30.1",
-    "mysql2": "^3.14.5"
+    "mysql2": "^3.9.9",
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "@types/node": "^22.18.6",

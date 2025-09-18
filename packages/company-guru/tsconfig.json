@@ -1,56 +1,34 @@
 {
   "compilerOptions": {
-    "module": "CommonJS",
-    // Import non-ES modules as default imports.
-    "esModuleInterop": true,
-    // Target latest version of ECMAScript.
-    "target": "ES2022",
-    // Process & infer types from .js files.
-    "allowJs": false,
-    // Enable strictNullChecks & noImplicitAny.
-    "strictNullChecks": true,
-    "noImplicitAny": true,
+    // Compiling JS version
+    "target": "ES6",
+    "module": "commonjs",
+    "lib": [
+      "DOM",
+      "ES2020"
+    ],
+    // Strict
     "strict": true,
-    "strictFunctionTypes": false,
-    "noImplicitThis": false,
-    // Search under node_modules for non-relative imports.
-    "moduleResolution": "node",
-    // Import .json files
-    "resolveJsonModule": true,
-    "sourceMap": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    // Case-sensitive file names
+    "forceConsistentCasingInFileNames": true,
+    // Output compiling directory
     "outDir": "./dist",
-    "baseUrl": ".",
+    // Code directory
     "rootDir": "./src",
-    "paths": {
-      "*": [
-        "node_modules/*",
-        "src/types/*"
-      ]
-    }
+    // Use better way to include libraries after compiling
+    "esModuleInterop": true,
+    // Append source map after compiling
+    "sourceMap": true,
+    // Remove code comments after compiling
+    "removeComments": false,
+    // Location of the paths param,
+    "baseUrl": "./",
+    // Library aliases (use `tsconfig-paths` to load them)
+    "paths": {}
   },
   "include": [
-    "src/**/*"
-  ],
-  "exclude": [
-    ".templates"
+    "src/"
   ]
 }
-
-// {
-//   "compilerOptions": {
-//     "module": "commonjs",
-//     "target": "es2016",
-//     "esModuleInterop": true,
-//     "allowJs": false,
-//     "noImplicitAny": true,
-//     "strictNullChecks": true,
-//     "moduleResolution": "node",
-//     "resolveJsonModule": true,
-//     "sourceMap": true,
-//     "forceConsistentCasingInFileNames": true,
-//     "strict": true,
-//     "skipLibCheck": true
-//   },
-//   "include": ["src/**/*", "../client/src/api", "src/types/*"],
-//   "exclude": [".templates"]
-// }
