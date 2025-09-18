@@ -64,88 +64,99 @@ export abstract class GuruBase {
    * Request for advanced search by date
    */
   async advancedSearch(filter: any = {}, dataAppendFn: ResultsCallback | null = null, options: IAdvancedDateOptions = {}): Promise<void> {
-    // Set filter
-    const dateMin = (options?.dateFrom ?? this.dateFrom).clone();
-    const dateMax = (options?.dateTo ?? this.dateTo).clone();
-    const skip = options?.skip ?? 0;
+    const initialDateFrom = (options?.dateFrom ?? this.dateFrom).clone();
+    const initialDateTo = (options?.dateTo ?? this.dateTo).clone();
+    const initialSkip = options?.skip ?? 0;
 
-    filter.establishmentDate = {
-      min: dateMin.format('YYYY-MM-DD'),
-      max: dateMax.format('YYYY-MM-DD'),
+    type DateRangeTask = {
+      dateFrom: moment.Moment;
+      dateTo: moment.Moment;
+      skip: number;
     };
 
-    if (skip >= this.maxResults) {
-      return;
-    }
+    const stack: DateRangeTask[] = [{
+      dateFrom: initialDateFrom,
+      dateTo: initialDateTo,
+      skip: initialSkip,
+    }];
 
-    // Get search results
-    const rs = await this.request('app/search/advanced/', {
-        cache: true,
-        tryToRefreshToken: true,
-        data: {
-          country: 'bg',
-          limit: this.perPage,
-          skip,
-          ...filter,
-        },
-        method: 'POST',
-      },
-    );
+    while (stack.length) {
+      const { dateFrom, dateTo, skip } = stack.pop()!;
 
-    // Check total results
-    const totalValue = Number(rs?.data?.total ?? 0);
-    const total = Number.isFinite(totalValue) ? totalValue : 0;
-    const left = total - skip;
-    console.log(`${filter.establishmentDate.min}\t${filter.establishmentDate.max}\tTotal: ${total}\tLeft: ${left}`);
-
-    if (!total) {
-      return;
-    }
-
-    const dateDiff = dateMax.diff(dateMin, 'days');
-    const shouldSplit = total > this.maxResults && dateDiff > 0;
-
-    // Extract results
-    if (!shouldSplit && rs?.data?.items) {
-      await this.extractResults(rs.data.items, dataAppendFn);
-    }
-
-
-    if (left < 0) {
-      return;
-    }
-
-    // Go to next page or divide the establishment date (if the date is in 1 day then we can`t devide)
-    if (shouldSplit) {
-      const midOffset = Math.floor(dateDiff / 2);
-      const firstRangeEnd = dateMin.clone().add(midOffset, 'days');
-      const secondRangeStart = firstRangeEnd.clone().add(1, 'days');
-
-      await this.advancedSearch(filter, dataAppendFn, {
-        ...options,
-        skip: 0,
-        dateFrom: dateMin.clone(),
-        dateTo: firstRangeEnd,
-      });
-
-      if (secondRangeStart.isSame(dateMax) || secondRangeStart.isBefore(dateMax)) {
-        await this.advancedSearch(filter, dataAppendFn, {
-          ...options,
-          skip: 0,
-          dateFrom: secondRangeStart,
-          dateTo: dateMax.clone(),
-        });
+      if (skip >= this.maxResults) {
+        continue;
       }
 
-      return;
-    }
+      const establishmentDate = {
+        min: dateFrom.format('YYYY-MM-DD'),
+        max: dateTo.format('YYYY-MM-DD'),
+      };
 
-    await this.advancedSearch(filter, dataAppendFn, {
-      ...options,
-      skip: skip + this.perPage,
-      dateFrom: dateMin,
-      dateTo: dateMax,
-    });
+      const requestFilter = {
+        ...filter,
+        establishmentDate,
+      };
+
+      const rs = await this.request('app/search/advanced/', {
+          cache: true,
+          tryToRefreshToken: true,
+          data: {
+            country: 'bg',
+            limit: this.perPage,
+            skip,
+            ...requestFilter,
+          },
+          method: 'POST',
+        },
+      );
+
+      const totalValue = Number(rs?.data?.total ?? 0);
+      const total = Number.isFinite(totalValue) ? totalValue : 0;
+      const left = total - skip;
+      console.log(`${establishmentDate.min}\t${establishmentDate.max}\tTotal: ${total}\tLeft: ${left}`);
+
+      if (!total) {
+        continue;
+      }
+
+      const dateDiff = dateTo.diff(dateFrom, 'days');
+
+      if (total > this.maxResults && dateDiff > 0) {
+        const midOffset = Math.floor(dateDiff / 2);
+        const firstRangeEnd = dateFrom.clone().add(midOffset, 'days');
+        const secondRangeStart = firstRangeEnd.clone().add(1, 'days');
+
+        if (secondRangeStart.isSame(dateTo) || secondRangeStart.isBefore(dateTo)) {
+          stack.push({
+            dateFrom: secondRangeStart.clone(),
+            dateTo: dateTo.clone(),
+            skip: 0,
+          });
+        }
+
+        stack.push({
+          dateFrom: dateFrom.clone(),
+          dateTo: firstRangeEnd.clone(),
+          skip: 0,
+        });
+
+        continue;
+      }
+
+      if (Array.isArray(rs?.data?.items) && rs.data.items.length) {
+        await this.extractResults(rs.data.items, dataAppendFn);
+      }
+
+      const nextSkip = skip + this.perPage;
+
+      if (nextSkip < total && nextSkip < this.maxResults) {
+        stack.push({
+          dateFrom: dateFrom.clone(),
+          dateTo: dateTo.clone(),
+          skip: nextSkip,
+        });
+      }
+    }
   }
 
   /**
