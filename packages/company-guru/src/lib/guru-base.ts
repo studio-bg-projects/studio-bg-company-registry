@@ -51,6 +51,8 @@ export abstract class GuruBase {
   protected tokenTtl = 200;
   protected latestUsedUser: number | null = null;
   protected users: IUser[] = [];
+  protected nextUserIndexToLogin = 0;
+  protected userLoginPromises: Map<number, Promise<IUser>> = new Map();
 
   /**
    * Class constructor
@@ -187,35 +189,90 @@ export abstract class GuruBase {
   }
 
   /**
-   * Request to log in Company Guru
+   * Reset login state. Users will authenticate on demand.
    */
-  async login() {
-    for (const item of config.cg.users) {
-      // Login
-      const rs = await this.request('account/log-in/', {
-        cache: false,
-        tryToRefreshToken: false,
-        data: {
-          email: item.email,
-          password: item.password,
-        },
-        method: 'POST',
-      });
+  async login(): Promise<void> {
+    this.users = [];
+    this.latestUsedUser = null;
+    this.nextUserIndexToLogin = 0;
+    this.userLoginPromises.clear();
+  }
 
-      // Set tokens
-      const user = {
-        email: item.email,
-        refreshToken: rs.refreshToken,
-        token: rs.token,
-        tokenExpireAt: moment(),
-      };
+  /**
+   * Build default request headers
+   */
+  protected buildRequestHeaders(token?: string): Record<string, string> {
+    const headers: Record<string, string> = {
+      'accept': 'application/json',
+      'accept-language': 'en',
+      'content-type': 'application/json',
+      'sec-ch-ua': '"Google Chrome";v="95", "Chromium";v="95", ";Not A Brand";v="99"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-site',
+      'Referer': 'https://app.company.guru/',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+    };
 
-      this.users.push(user);
-
-      console.log(`Login token for ${item.email} -> ${rs.token}`);
-
-      await this.tokenRefresh(user);
+    if (token) {
+      headers.authorization = `Bearer ${token}`;
     }
+
+    return headers;
+  }
+
+  /**
+   * Login single user and return the user data
+   */
+  protected async loginUser(userIndex: number): Promise<IUser> {
+    const credentials = config.cg.users[userIndex];
+
+    if (!credentials) {
+      throw new Error(`Missing credentials configuration for user index ${userIndex}`);
+    }
+
+    await Tools.sleep(guruSettings.requestSleepMs);
+
+    const url = `${this.url}account/log-in/`;
+    const requestSettings = {
+      headers: this.buildRequestHeaders(),
+      method: 'POST',
+      body: JSON.stringify({
+        email: credentials.email,
+        password: credentials.password,
+      }),
+    };
+
+    const response = await fetch(url, requestSettings) as any;
+    const rs = await response.json();
+
+    if (rs?.error) {
+      console.log('!!!LOGIN ERROR!!!');
+      console.log({
+        error: rs.error,
+        email: credentials.email,
+      });
+      throw new Error(`Company Guru login failed for ${credentials.email}`);
+    }
+
+    const user: IUser = {
+      email: credentials.email,
+      refreshToken: rs.refreshToken,
+      token: rs.token,
+      tokenExpireAt: moment(),
+    };
+
+    console.log(`Login token for ${credentials.email} -> ${rs.token}`);
+
+    await this.tokenRefresh(user, true);
+
+    this.users[userIndex] = user;
+    this.latestUsedUser = userIndex;
+    this.nextUserIndexToLogin = userIndex + 1;
+
+    return user;
   }
 
   /**
@@ -228,15 +285,28 @@ export abstract class GuruBase {
       }
     }
 
-    // Update the token (with refreshToke)
-    const rs = await this.request('account/refresh/', {
-      cache: false,
-      tryToRefreshToken: false,
-      data: {
-        refreshToken: user.refreshToken,
-      },
+    await Tools.sleep(guruSettings.requestSleepMs);
+
+    const url = `${this.url}account/refresh/`;
+    const requestSettings = {
+      headers: this.buildRequestHeaders(),
       method: 'POST',
-    });
+      body: JSON.stringify({
+        refreshToken: user.refreshToken,
+      }),
+    };
+
+    const response = await fetch(url, requestSettings) as any;
+    const rs = await response.json();
+
+    if (rs?.error) {
+      console.log('!!!TOKEN REFRESH ERROR!!!');
+      console.log({
+        error: rs.error,
+        email: user.email,
+      });
+      throw new Error(`Company Guru token refresh failed for ${user.email}`);
+    }
 
     // Set tokens
     user.refreshToken = rs.refreshToken;
@@ -251,7 +321,27 @@ export abstract class GuruBase {
   /**
    * Generate new user for the request
    */
-  getUserForRequest(): IUser {
+  protected async getUserForRequest(): Promise<IUser> {
+    const totalUsers = config.cg.users.length;
+
+    if (this.nextUserIndexToLogin < totalUsers) {
+      const userIndex = this.nextUserIndexToLogin;
+      let loginPromise = this.userLoginPromises.get(userIndex);
+
+      if (!loginPromise) {
+        loginPromise = this.loginUser(userIndex).finally(() => {
+          this.userLoginPromises.delete(userIndex);
+        });
+        this.userLoginPromises.set(userIndex, loginPromise);
+      }
+
+      return await loginPromise;
+    }
+
+    if (!this.users.length) {
+      throw new Error('No available users configured for Company Guru requests.');
+    }
+
     let userKey = this.latestUsedUser;
 
     if (userKey === null) {
@@ -275,7 +365,7 @@ export abstract class GuruBase {
   protected async request(path: string, settings: IRequestSettings): Promise<any> {
     for (let rTry = 1; rTry <= 100; rTry++) {
       try {
-        const currentUser = this.getUserForRequest();
+        const currentUser = await this.getUserForRequest();
 
         if (settings.tryToRefreshToken) {
           await this.tokenRefresh(currentUser, false);
@@ -305,20 +395,7 @@ export abstract class GuruBase {
 
         // Make request
         const requestSettings = {
-          'headers': {
-            'accept': 'application/json',
-            'accept-language': 'en',
-            'content-type': 'application/json',
-            'sec-ch-ua': '"Google Chrome";v="95", "Chromium";v="95", ";Not A Brand";v="99"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-site',
-            'Referer': 'https://app.company.guru/',
-            'Referrer-Policy': 'strict-origin-when-cross-origin',
-            'authorization': `Bearer ${currentUser?.token}`,
-          },
+          'headers': this.buildRequestHeaders(currentUser?.token),
           'method': settings.method,
           ...(settings.method === 'POST' ? {
             'body': JSON.stringify(settings.data),
