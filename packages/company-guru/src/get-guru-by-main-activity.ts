@@ -1,6 +1,5 @@
 import { GuruBase } from './lib/guru-base';
 import { Storage } from './lib/storage';
-import { guruSettings } from './settings';
 import { Tools } from './lib/tools';
 import moment from 'moment';
 import dotenv from 'dotenv';
@@ -37,43 +36,44 @@ class GetGuruByMainActivity extends GuruBase {
       return;
     }
 
+    const dateFrom = this.dateFrom.clone();
+    const dateTo = this.dateTo.clone();
+
     for (let i = 0; i < this.mainActivities.length; i++) {
       const activity = this.mainActivities[i];
 
-      for (const [dateFrom, dateTo] of guruSettings.dateChunks) {
-        let activityFilter = {
-          mainActivity: [activity.cid],
-        };
+      const activityFilter = {
+        mainActivity: [activity.cid],
+      };
 
-        const continuesKey = `ACTIVITY > CID: ${activity.cid} / CODE: ${activity.code} / CHUNK: ${dateFrom.format('YYYY-MM-DD')} <> ${dateTo.format('YYYY-MM-DD')}`;
-        console.log(`\n${continuesKey} / LEFT: ${this.mainActivities.length - i}`);
+      const continuesKey = `ACTIVITY > CID: ${activity.cid} / CODE: ${activity.code} / RANGE: ${dateFrom.format('YYYY-MM-DD')} <> ${dateTo.format('YYYY-MM-DD')}`;
+      console.log(`\n${continuesKey} / LEFT: ${this.mainActivities.length - i}`);
 
-        // Check for continues
-        if (await this.storage.cacheContinuesGet(continuesKey)) {
-          console.log('CONTINUES SKIP :)');
-          continue;
-        }
+      // Check for continues
+      if (await this.storage.cacheContinuesGet(continuesKey)) {
+        console.log('CONTINUES SKIP :)');
+        continue;
+      }
 
-        for (let rTry = 1; rTry <= 5; rTry++) {
-          try {
-            await this.advancedSearch(activityFilter, (company) => {
-              company.activityCid = activity.cid;
-              return company;
-            }, {
-              dateFrom,
-              dateTo,
-            });
+      for (let rTry = 1; rTry <= 5; rTry++) {
+        try {
+          await this.advancedSearch(activityFilter, (company) => {
+            company.activityCid = activity.cid;
+            return company;
+          }, {
+            dateFrom: dateFrom.clone(),
+            dateTo: dateTo.clone(),
+          });
 
-            // Save continues
-            await this.storage.cacheContinuesAdd(continuesKey, moment().format('YYYY-MM-DD'));
+          // Save continues
+          await this.storage.cacheContinuesAdd(continuesKey, moment().format('YYYY-MM-DD'));
 
-            // Break the check
-            break;
-          } catch (e) {
-            console.log(`>>> ROOT FAIL / TRY ${rTry} /  SLEEP 10sec. <<<`);
-            console.error(e);
-            await Tools.sleep(10000);
-          }
+          // Break the check
+          break;
+        } catch (e) {
+          console.log(`>>> ROOT FAIL / TRY ${rTry} /  SLEEP 10sec. <<<`);
+          console.error(e);
+          await Tools.sleep(10000);
         }
       }
     }
