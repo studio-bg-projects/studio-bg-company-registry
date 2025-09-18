@@ -1,0 +1,12 @@
+{
+  "name": "company-registry",
+  "version": "0.0.1",
+  "author": "Studio.bg",
+  "private": true,
+  "license": "MIT",
+  "homepage": "https://stduio.bg",
+  "type": "module",
+  "workspaces": [
+    "./packages/*"
+  ]
+}

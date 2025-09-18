@@ -1,0 +1,19 @@
+name: $PREFIX$SUFFIX
+
+services:
+  mysql:
+    container_name: $PREFIX-mysql$SUFFIX
+    image: $PREFIX/mysql:latest
+    build: ./docker-images/mysql
+    restart: ${SERVICES_RESTART:-no}
+    ports:
+      - ${PORT_MYSQL:-3306}:3306
+    volumes:
+      - ${VOLUME_MYSQL}
+    environment:
+      TZ: ${TZ:-UTC}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD-pass}
+      MYSQL_DATABASE: ${DB_DATABASE-$PREFIX}
+      MYSQL_USER: ${DB_USERNAME-$PREFIX}
+      MYSQL_PASSWORD: ${DB_PASSWORD-pass}
+    command: mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
