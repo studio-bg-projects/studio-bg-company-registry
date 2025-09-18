@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({
+  path: __dirname + '/../../.env',
+});
 
 export const mysql = {
   host: process.env.MYSQL_HOST || '127.0.0.1',
