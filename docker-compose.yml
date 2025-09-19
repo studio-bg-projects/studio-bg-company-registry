@@ -9,6 +9,7 @@ services:
     ports:
       - ${PORT_MYSQL:-3306}:3306
     volumes:
+      - ./docker-images/mysql/my.cnf:/etc/mysql/conf.d/custom.cnf:ro
       - ${VOLUME_MYSQL}
     environment:
       TZ: ${TZ:-UTC}
