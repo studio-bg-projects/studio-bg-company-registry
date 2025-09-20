@@ -1,6 +1,5 @@
 import { GuruBase } from './lib/guru-base';
 import { Storage } from './lib/storage';
-import { guruSettings } from './settings';
 import { Tools } from './lib/tools';
 import moment from 'moment';
 import dotenv from 'dotenv';
@@ -12,33 +11,33 @@ class GetGuruAllCompanies extends GuruBase {
    * Load all results split by date
    */
   async loadResults() {
-    for (const [dateFrom, dateTo] of guruSettings.dateChunks) {
-      const continuesKey = `GET-ALL > CHUNK: ${dateFrom.format('YYYY-MM-DD')} <> ${dateTo.format('YYYY-MM-DD')}`;
-      console.log(continuesKey);
+    const dateFrom = this.dateFrom.clone();
+    const dateTo = this.dateTo.clone();
+    const continuesKey = `GET-ALL > RANGE: ${dateFrom.format('YYYY-MM-DD')} <> ${dateTo.format('YYYY-MM-DD')}`;
+    console.log(continuesKey);
 
-      // Check for continues
-      if (await this.storage.cacheContinuesGet(continuesKey)) {
-        console.log('CONTINUES SKIP :)');
-        continue;
-      }
+    // Check for continues
+    if (await this.storage.cacheContinuesGet(continuesKey)) {
+      console.log('CONTINUES SKIP :)');
+      return;
+    }
 
-      for (let rTry = 1; rTry <= 5; rTry++) {
-        try {
-          await this.advancedSearch({}, null, {
-            dateFrom,
-            dateTo,
-          });
+    for (let rTry = 1; rTry <= 5; rTry++) {
+      try {
+        await this.advancedSearch({}, null, {
+          dateFrom: dateFrom.clone(),
+          dateTo: dateTo.clone(),
+        });
 
-          // Save continues
-          await this.storage.cacheContinuesAdd(continuesKey, moment().format('YYYY-MM-DD'));
+        // Save continues
+        await this.storage.cacheContinuesAdd(continuesKey, moment().format('YYYY-MM-DD'));
 
-          // Break the check
-          break;
-        } catch (e) {
-          console.log(`>>> ROOT FAIL / TRY ${rTry} /  SLEEP 10sec. <<<`);
-          console.error(e);
-          await Tools.sleep(10000);
-        }
+        // Break the check
+        break;
+      } catch (e) {
+        console.log(`>>> ROOT FAIL / TRY ${rTry} /  SLEEP 10sec. <<<`);
+        console.error(e);
+        await Tools.sleep(10000);
       }
     }
   }

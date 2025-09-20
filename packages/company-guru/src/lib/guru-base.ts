@@ -64,86 +64,98 @@ export abstract class GuruBase {
    * Request for advanced search by date
    */
   async advancedSearch(filter: any = {}, dataAppendFn: ResultsCallback | null = null, options: IAdvancedDateOptions = {}): Promise<void> {
-    // Set filter
-    const dateMin = options?.dateFrom ? options.dateFrom : this.dateFrom;
-    const dateMax = options?.dateTo ? options.dateTo : this.dateTo;
+    const initialDateFrom = (options?.dateFrom ?? this.dateFrom).clone();
+    const initialDateTo = (options?.dateTo ?? this.dateTo).clone();
+    const initialSkip = options?.skip ?? 0;
 
-    filter.establishmentDate = {
-      min: dateMin.format('YYYY-MM-DD'),
-      max: dateMax.format('YYYY-MM-DD'),
+    type DateRangeTask = {
+      dateFrom: moment.Moment;
+      dateTo: moment.Moment;
+      skip: number;
     };
 
-    // Options
-    if (!options.skip) {
-      options.skip = 0;
-    }
+    const stack: DateRangeTask[] = [{
+      dateFrom: initialDateFrom,
+      dateTo: initialDateTo,
+      skip: initialSkip,
+    }];
 
-    if (options.skip >= this.maxResults) {
-      return;
-    }
+    while (stack.length) {
+      const { dateFrom, dateTo, skip } = stack.pop()!;
 
-    // Get search results
-    const rs = await this.request('app/search/advanced/', {
-        cache: true,
-        tryToRefreshToken: true,
-        data: {
-          country: 'bg',
-          limit: this.perPage,
-          skip: options.skip,
-          ...filter,
+      if (skip >= this.maxResults) {
+        continue;
+      }
+
+      const establishmentDate = {
+        min: dateFrom.format('YYYY-MM-DD'),
+        max: dateTo.format('YYYY-MM-DD'),
+      };
+
+      const requestFilter = {
+        ...filter,
+        establishmentDate,
+      };
+
+      const rs = await this.request('app/search/advanced/', {
+          cache: true,
+          tryToRefreshToken: true,
+          data: {
+            country: 'bg',
+            limit: this.perPage,
+            skip,
+            ...requestFilter,
+          },
+          method: 'POST',
         },
-        method: 'POST',
-      },
-    );
+      );
 
-    // Check total results
-    const total = rs?.data?.total;
-    const left = total - options.skip;
-    console.log(`${filter.establishmentDate.min}\t${filter.establishmentDate.max}\tTotal: ${total}\tLeft: ${left}`);
+      const totalValue = Number(rs?.data?.total ?? 0);
+      const total = Number.isFinite(totalValue) ? totalValue : 0;
+      const left = total - skip;
+      console.log(`${establishmentDate.min}\t${establishmentDate.max}\tTotal: ${total}\tLeft: ${left}`);
 
-    if (!total) {
-      return;
-    }
+      if (!total) {
+        continue;
+      }
 
-    // Extract results
-    if (rs?.data?.items) {
-      await this.extractResults(rs.data.items, dataAppendFn);
-    }
+      const dateDiff = dateTo.diff(dateFrom, 'days');
 
+      if (total > this.maxResults && dateDiff > 0) {
+        const midOffset = Math.floor(dateDiff / 2);
+        const firstRangeEnd = dateFrom.clone().add(midOffset, 'days');
+        const secondRangeStart = firstRangeEnd.clone().add(1, 'days');
 
-    if (left < 0) {
-      return;
-    }
+        if (secondRangeStart.isSame(dateTo) || secondRangeStart.isBefore(dateTo)) {
+          stack.push({
+            dateFrom: secondRangeStart.clone(),
+            dateTo: dateTo.clone(),
+            skip: 0,
+          });
+        }
 
-    // Go to next page or divide the establishment date (if the date is in 1 day then we can`t devide)
-    if (total > this.maxResults && !dateMin.isSame(dateMax)) {
-      const dateDiff = dateMax.diff(dateMin, 'days');
+        stack.push({
+          dateFrom: dateFrom.clone(),
+          dateTo: firstRangeEnd.clone(),
+          skip: 0,
+        });
 
-      const range1 = Math.floor(dateDiff / 2);
-      const range2 = dateDiff - range1;
+        continue;
+      }
 
-      const dateMin1 = dateMin.clone();
-      const dateMax1 = dateMin1.clone().add(range1, 'days');
+      if (Array.isArray(rs?.data?.items) && rs.data.items.length) {
+        await this.extractResults(rs.data.items, dataAppendFn);
+      }
 
-      const dateMin2 = dateMax1.clone().add(1, 'days');
-      const dateMax2 = dateMin2.clone().add(range2, 'days');
+      const nextSkip = skip + this.perPage;
 
-      // Step 1 (half range start)
-      await this.advancedSearch(filter, dataAppendFn, {
-        ...options,
-        ...{dateFrom: dateMin1, dateTo: dateMax1},
-      });
-
-      // Step 2 (half range end)
-      await this.advancedSearch(filter, dataAppendFn, {
-        ...options,
-        ...{dateFrom: dateMin2, dateTo: dateMax2},
-      });
-    } else {
-      await this.advancedSearch(filter, dataAppendFn, {
-        ...options,
-        ...{skip: options.skip + this.perPage},
-      });
+      if (nextSkip < total && nextSkip < this.maxResults) {
+        stack.push({
+          dateFrom: dateFrom.clone(),
+          dateTo: dateTo.clone(),
+          skip: nextSkip,
+        });
+      }
     }
   }
 

@@ -1,6 +1,5 @@
 import { GuruBase } from './lib/guru-base';
 import { Storage } from './lib/storage';
-import { guruSettings } from './settings';
 import { Tools } from './lib/tools';
 import moment from 'moment';
 import dotenv from 'dotenv';
@@ -56,6 +55,9 @@ class LoadGuruProfit extends GuruBase {
     const step = 1000;
     const steps = Math.ceil((this.rangeNetProfitMax - this.rangeNetProfitMin) / step);
 
+    const dateFrom = this.dateFrom.clone();
+    const dateTo = this.dateTo.clone();
+
     for (let year = this.financialYearMax; year >= this.financialYearMin; year--) {
       for (let profitStep = 1; profitStep <= steps; profitStep++) {
         const profitFrom = profitStep * step;
@@ -69,53 +71,51 @@ class LoadGuruProfit extends GuruBase {
           },
         };
 
-        for (const [dateFrom, dateTo] of guruSettings.dateChunks) {
-          const continuesKey = `PROFIT > PROFIT: ${profitFrom} - ${profitTo} / CHUNK: ${dateFrom.format('YYYY-MM-DD')} <> ${dateTo.format('YYYY-MM-DD')}`;
-          console.log(`\n${continuesKey} / LEFT: ${steps - profitStep}`);
+        const continuesKey = `PROFIT > PROFIT: ${profitFrom} - ${profitTo} / RANGE: ${dateFrom.format('YYYY-MM-DD')} <> ${dateTo.format('YYYY-MM-DD')}`;
+        console.log(`\n${continuesKey} / LEFT: ${steps - profitStep}`);
 
-          // Check for continues
-          if (await this.storage.cacheContinuesGet(continuesKey)) {
-            console.log('CONTINUES SKIP :)');
-            continue;
-          }
+        // Check for continues
+        if (await this.storage.cacheContinuesGet(continuesKey)) {
+          console.log('CONTINUES SKIP :)');
+          continue;
+        }
 
-          for (let rTry = 1; rTry <= 5; rTry++) {
-            try {
-              await this.advancedSearch(activityFilter, (company) => {
-                // @todo delete with next commit
-                {
-                  if (company.netProfitFrom) {
-                    delete company.netProfitFrom;
-                  }
-                  if (company.netProfitTo) {
-                    delete company.netProfitTo;
-                  }
+        for (let rTry = 1; rTry <= 5; rTry++) {
+          try {
+            await this.advancedSearch(activityFilter, (company) => {
+              // @todo delete with next commit
+              {
+                if (company.netProfitFrom) {
+                  delete company.netProfitFrom;
                 }
-
-                if (!company.netProfit) {
-                  company.netProfit = {};
+                if (company.netProfitTo) {
+                  delete company.netProfitTo;
                 }
+              }
 
-                company.netProfit[year] = {
-                  from: profitFrom,
-                  to: profitTo,
-                };
-                return company;
-              }, {
-                dateFrom,
-                dateTo,
-              });
+              if (!company.netProfit) {
+                company.netProfit = {};
+              }
 
-              // Save continues
-              await this.storage.cacheContinuesAdd(continuesKey, moment().format('YYYY-MM-DD'));
+              company.netProfit[year] = {
+                from: profitFrom,
+                to: profitTo,
+              };
+              return company;
+            }, {
+              dateFrom: dateFrom.clone(),
+              dateTo: dateTo.clone(),
+            });
 
-              // Break the check
-              break;
-            } catch (e) {
-              console.log(`>>> ROOT FAIL / TRY ${rTry} /  SLEEP 10sec. <<<`);
-              console.error(e);
-              await Tools.sleep(10000);
-            }
+            // Save continues
+            await this.storage.cacheContinuesAdd(continuesKey, moment().format('YYYY-MM-DD'));
+
+            // Break the check
+            break;
+          } catch (e) {
+            console.log(`>>> ROOT FAIL / TRY ${rTry} /  SLEEP 10sec. <<<`);
+            console.error(e);
+            await Tools.sleep(10000);
           }
         }
       }
